@@ -1,26 +1,27 @@
 const IMAGE_COUNT = 604;
 let currentPage = 1;
 
-/* الحالات */
 const MODE = {
     PAGE: "page",
-    MENU_MAIN: "menu_main",
-    MENU_SURAH: "menu_surah",
-    MENU_JUZ: "menu_juz"
+    MAIN: "main",
+    SURAH: "surah",
+    JUZ: "juz",
+    PAGE_SEARCH: "page_search"
 };
 
-let currentMode = MODE.PAGE;
-let focusIndex = 0;
+let mode = MODE.PAGE;
+let focusables = [];
+let focusIndex = -1;
 
 const img = document.getElementById("quran-page-image");
 const menuOverlay = document.getElementById("menu-overlay");
 const menuBox = document.getElementById("menu-box");
 
-/* آخر صفحة */
-const saved = localStorage.getItem("lastPage");
-if (saved) currentPage = parseInt(saved);
+/* ================= صفحة ================= */
 
-/* عرض صفحة */
+const saved = localStorage.getItem("lastPage");
+if (saved) currentPage = +saved;
+
 function showPage(p) {
     if (p < 1 || p > IMAGE_COUNT) return;
     currentPage = p;
@@ -29,11 +30,39 @@ function showPage(p) {
     window.scrollTo(0, 0);
 }
 
-/* ================= القائمة ================= */
+/* ================= فوكس ================= */
+
+function setFocusables(list) {
+    focusables = list;
+    focusIndex = list.length ? 0 : -1;
+    updateFocus();
+}
+
+function updateFocus() {
+    focusables.forEach((el, i) =>
+        el.classList.toggle("focused", i === focusIndex)
+    );
+}
+
+function moveFocus(dir) {
+    if (!focusables.length) return;
+    focusIndex = Math.max(0, Math.min(focusIndex + dir, focusables.length - 1));
+    focusables[focusIndex].scrollIntoView({ block: "nearest" });
+    updateFocus();
+}
+
+/* دعم الماوس */
+function enableMouseFocus(el) {
+    el.addEventListener("mouseenter", () => {
+        focusIndex = focusables.indexOf(el);
+        updateFocus();
+    });
+}
+
+/* ================= القائمة الرئيسية ================= */
 
 function openMainMenu() {
-    currentMode = MODE.MENU_MAIN;
-    focusIndex = 0;
+    mode = MODE.MAIN;
     menuOverlay.classList.remove("hidden");
 
     menuBox.innerHTML = `
@@ -41,122 +70,162 @@ function openMainMenu() {
         <div class="menu-item">الأجزاء</div>
         <div class="menu-item">الصفحات</div>
     `;
-    updateFocus();
+
+    const items = [...menuBox.querySelectorAll(".menu-item")];
+
+    items[0].onclick = openSurahMenu;
+    items[1].onclick = openJuzMenu;
+    items[2].onclick = openPageSearch;
+
+    items.forEach(enableMouseFocus);
+    setFocusables(items);
 }
 
 function closeMenu() {
     menuOverlay.classList.add("hidden");
-    currentMode = MODE.PAGE;
-}
-
-/* فوكس */
-function updateFocus() {
-    const items = menuBox.querySelectorAll(".menu-item");
-    items.forEach((el, i) => {
-        el.classList.toggle("focused", i === focusIndex);
-    });
+    mode = MODE.PAGE;
 }
 
 /* ================= سور ================= */
 
 function openSurahMenu() {
-    currentMode = MODE.MENU_SURAH;
-    focusIndex = 0;
+    mode = MODE.SURAH;
 
     menuBox.innerHTML = `
         <div class="menu-item">⬅ رجوع</div>
-        <input class="search-box" id="surah-search" placeholder="بحث باسم السورة">
-        <div class="scroll-container" id="surah-list"></div>
+        <input class="search-box" placeholder="بحث باسم السورة">
+        <div class="scroll-container"></div>
     `;
 
-    const list = document.getElementById("surah-list");
-    allSurahs.forEach(s => {
-        const d = document.createElement("div");
-        d.className = "menu-item";
-        d.textContent = s.name;
-        d.onclick = () => {
-            closeMenu();
-            showPage(s.startPage);
-        };
-        list.appendChild(d);
-    });
+    const back = menuBox.children[0];
+    const search = menuBox.children[1];
+    const list = menuBox.children[2];
 
-    focusIndex = 2; // أول سورة
-    updateFocus();
+    back.onclick = openMainMenu;
+
+    function render(filter = "") {
+        list.innerHTML = "";
+        allSurahs
+            .filter(s => s.name.includes(filter))
+            .forEach(s => {
+                const d = document.createElement("div");
+                d.className = "menu-item";
+                d.textContent = s.name;
+                d.onclick = () => {
+                    closeMenu();
+                    showPage(s.startPage);
+                };
+                list.appendChild(d);
+                enableMouseFocus(d);
+            });
+
+        setFocusables([back, search, ...list.children]);
+        focusIndex = 2;
+        updateFocus();
+    }
+
+    search.oninput = () => render(search.value);
+    enableMouseFocus(back);
+    enableMouseFocus(search);
+    render();
 }
 
 /* ================= أجزاء ================= */
 
 function openJuzMenu() {
-    currentMode = MODE.MENU_JUZ;
-    focusIndex = 0;
+    mode = MODE.JUZ;
 
     menuBox.innerHTML = `
         <div class="menu-item">⬅ رجوع</div>
         <input class="search-box" placeholder="بحث برقم الجزء">
-        <div class="scroll-container" id="juz-list"></div>
+        <div class="scroll-container"></div>
     `;
 
-    const list = document.getElementById("juz-list");
-    allJuz.forEach(j => {
-        const d = document.createElement("div");
-        d.className = "menu-item";
-        d.textContent = j.name;
-        d.onclick = () => {
-            closeMenu();
-            showPage(j.startPage);
-        };
-        list.appendChild(d);
-    });
+    const back = menuBox.children[0];
+    const search = menuBox.children[1];
+    const list = menuBox.children[2];
 
-    focusIndex = 2;
-    updateFocus();
+    back.onclick = openMainMenu;
+
+    function render(filter = "") {
+        list.innerHTML = "";
+        allJuz
+            .filter(j => j.name.includes(filter))
+            .forEach(j => {
+                const d = document.createElement("div");
+                d.className = "menu-item";
+                d.textContent = j.name;
+                d.onclick = () => {
+                    closeMenu();
+                    showPage(j.startPage);
+                };
+                list.appendChild(d);
+                enableMouseFocus(d);
+            });
+
+        setFocusables([back, search, ...list.children]);
+        focusIndex = 2;
+        updateFocus();
+    }
+
+    search.oninput = () => render(search.value);
+    enableMouseFocus(back);
+    enableMouseFocus(search);
+    render();
+}
+
+/* ================= بحث الصفحات ================= */
+
+function openPageSearch() {
+    mode = MODE.PAGE_SEARCH;
+
+    menuBox.innerHTML = `
+        <div class="menu-item">⬅ رجوع</div>
+        <input class="search-box" placeholder="رقم الصفحة">
+        <div class="menu-item">اذهب</div>
+    `;
+
+    const [back, input, go] = menuBox.children;
+
+    back.onclick = openMainMenu;
+    go.onclick = () => {
+        const v = +input.value;
+        if (v >= 1 && v <= IMAGE_COUNT) {
+            closeMenu();
+            showPage(v);
+        }
+    };
+
+    [back, input, go].forEach(enableMouseFocus);
+    setFocusables([back, input, go]);
 }
 
 /* ================= ريموت ================= */
 
 document.addEventListener("keydown", e => {
 
-    /* الصفحة */
-    if (currentMode === MODE.PAGE) {
-        if (e.key === "ArrowDown") window.scrollBy(0, 80);
+    if (mode === MODE.PAGE) {
         if (e.key === "ArrowUp") window.scrollBy(0, -80);
+        if (e.key === "ArrowDown") window.scrollBy(0, 80);
         if (e.key === "ArrowRight") showPage(currentPage - 1);
         if (e.key === "ArrowLeft") showPage(currentPage + 1);
         if (e.key === "Enter") openMainMenu();
         return;
     }
 
-    /* داخل القائمة */
-    const items = menuBox.querySelectorAll(".menu-item");
-
-    if (e.key === "ArrowDown") {
-        focusIndex = Math.min(focusIndex + 1, items.length - 1);
-        items[focusIndex]?.scrollIntoView({ block: "nearest" });
-        updateFocus();
-    }
-
-    if (e.key === "ArrowUp") {
-        focusIndex = Math.max(focusIndex - 1, 0);
-        items[focusIndex]?.scrollIntoView({ block: "nearest" });
-        updateFocus();
-    }
+    if (e.key === "ArrowDown") moveFocus(1);
+    if (e.key === "ArrowUp") moveFocus(-1);
 
     if (e.key === "Enter") {
-        if (currentMode === MODE.MENU_MAIN) {
-            if (focusIndex === 0) openSurahMenu();
-            if (focusIndex === 1) openJuzMenu();
-            if (focusIndex === 2) alert("بحث الصفحات لاحقًا");
-        } else {
-            items[focusIndex]?.click();
-        }
+        focusables[focusIndex]?.click();
     }
 
     if (e.key === "Backspace" || e.key === "Escape") {
-        if (currentMode === MODE.MENU_MAIN) closeMenu();
+        if (mode === MODE.MAIN) closeMenu();
         else openMainMenu();
     }
 });
 
-/* بداية */
+/* ================= بداية ================= */
+
 showPage(currentPage);
