@@ -1,0 +1,81 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    background: black;
+    color: white;
+    overflow-y: auto;
+}
+
+/* صفحة المصحف */
+#quran-page-container {
+    width: 100%;
+}
+
+#quran-page-image {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* القائمة */
+#menu-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 100;
+}
+
+#menu-box {
+    position: absolute;
+    top: 5%;
+    right: 10%;
+    width: 80%;
+    height: 90%;
+    background: #111;
+    border-radius: 12px;
+    padding: 20px;
+    overflow: hidden;
+}
+
+/* عناصر القائمة */
+.menu-item {
+    padding: 14px;
+    margin-bottom: 10px;
+    background: #222;
+    border-radius: 8px;
+}
+
+/* فوكس */
+.menu-item.focused {
+    background: #555;
+    outline: 2px solid #aaa;
+}
+
+/* البحث */
+.search-box {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 10px;
+    font-size: 1em;
+    border-radius: 6px;
+    border: none;
+}
+
+/* قائمة متحركة */
+.scroll-container {
+    max-height: 70%;
+    overflow-y: auto;
+}
+
+/* شريط تمرير */
+.scroll-container::-webkit-scrollbar {
+    width: 10px;
+}
+.scroll-container::-webkit-scrollbar-thumb {
+    background: #666;
+    border-radius: 5px;
+}
+
+.hidden {
+    display: none;
+}
