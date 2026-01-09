@@ -1,4 +1,4 @@
-// تطبيق عرض صفحات المصحف مع تحسينا�� للسرعة والتوافق
+// app.js (محدث) — تحكم بعرض الصفحات وتحسين للتلفزيون والتمرير العمودي
 const IMAGE_COUNT = 604;
 let currentPage = 1;
 
@@ -14,6 +14,7 @@ let mode = MODE.PAGE;
 let focusables = [];
 let focusIndex = -1;
 
+const container = document.getElementById("quran-page-container");
 const img = document.getElementById("quran-page-image");
 const menuOverlay = document.getElementById("menu-overlay");
 const menuBox = document.getElementById("menu-box");
@@ -21,27 +22,33 @@ const spinner = document.getElementById("spinner");
 const imageError = document.getElementById("image-error");
 
 const imageCache = new Map(); // page -> { status, src }
+const startTime = Date.now();
 
 // last page from localStorage
 const saved = localStorage.getItem("lastPage");
 if (saved) currentPage = +saved;
 
-// ---------- Helpers for loading images ----------
+// ensure overlay initially hidden
+menuOverlay.classList.add('hidden');
+menuOverlay.setAttribute('aria-hidden', 'true');
+showSpinner(false);
+showImageError(false);
 
+// ---------- Helpers for loading images ----------
 function getCandidatesFor(page) {
-    // ترتيب المحاولات: webp (أفضل), jpeg, jpg, low-res jpeg
+    // نحاول نسخة منخفضة أولاً ثم webp ثم jpeg
     return [
+        `pages/low/page${page}.jpeg`,
         `pages/webp/page${page}.webp`,
         `pages/page${page}.jpeg`,
-        `pages/page${page}.jpg`,
-        `pages/low/page${page}.jpeg`
+        `pages/page${page}.jpg`
     ];
 }
 
 function loadImageSrc(src, timeout = 8000) {
     return new Promise((resolve, reject) => {
         const im = new Image();
-        // بعض بيئات التلفزيون تتطلب نفس الأصل أو crossorigin - لا نستخدم الآن
+        im.decoding = 'async';
         let done = false;
         const t = setTimeout(() => {
             if (done) return;
@@ -62,6 +69,7 @@ function loadImageSrc(src, timeout = 8000) {
             clearTimeout(t);
             reject(new Error('error'));
         };
+        // ضع src أخيراً
         im.src = src;
     });
 }
@@ -71,7 +79,8 @@ async function preloadImage(page, options = {}) {
 
     if (imageCache.has(page)) {
         const entry = imageCache.get(page);
-        if (entry.status === 'loaded' || entry.status === 'loading') return entry.promise || entry.src;
+        if (entry.status === 'loaded') return entry.src;
+        if (entry.status === 'loading') return entry.promise;
     }
 
     const candidates = getCandidatesFor(page);
@@ -80,21 +89,17 @@ async function preloadImage(page, options = {}) {
 
     imageCache.set(page, { status: 'loading', promise: outerPromise });
 
-    // Try sequentially: if low-res (last candidate) loads faster, we still try higher quality later
     (async () => {
         let lastError;
         for (let i = 0; i < candidates.length; i++) {
             const s = candidates[i];
             try {
                 const src = await loadImageSrc(s, options.timeout || 6000);
-                // success
                 imageCache.set(page, { status: 'loaded', src });
                 resolveOuter(src);
-                // after we succeeded on a low-res, still try to load a better one in background
-                // but only if a better candidate exists earlier in the list
-                for (let j = 0; j < i; j++) {
+                // بعد النجاح حاول ترقية الجودة في الخلفية (إذا كانت هناك ملفات أفضل لاحقاً)
+                for (let j = i + 1; j < candidates.length; j++) {
                     const better = candidates[j];
-                    // background attempt (no await)
                     loadImageSrc(better, 8000).then(bsrc => {
                         imageCache.set(page, { status: 'loaded', src: bsrc });
                     }).catch(()=>{});
@@ -102,10 +107,8 @@ async function preloadImage(page, options = {}) {
                 return;
             } catch (err) {
                 lastError = err;
-                // try next candidate
             }
         }
-        // no candidate worked
         imageCache.set(page, { status: 'error' });
         rejectOuter(lastError || new Error('no-src'));
     })();
@@ -114,21 +117,22 @@ async function preloadImage(page, options = {}) {
 }
 
 function showSpinner(show) {
+    if (!spinner) return;
     spinner.classList.toggle('hidden', !show);
     spinner.setAttribute('aria-hidden', String(!show));
 }
 
-function showImageError(show, text) {
+function showImageError(show, html) {
+    if (!imageError) return;
     if (show) {
-        imageError.textContent = text || 'عذراً: لم نتمكن من تحميل الصفحة.';
+        imageError.innerHTML = html || 'عذراً: لم نتمكن من تحميل الصفحة.';
         imageError.classList.remove('hidden');
     } else {
         imageError.classList.add('hidden');
     }
 }
 
-// ---------- Show page with caching & preloading neighbors ----------
-
+// ---------- showPage with vertical container scrolling & preloading ----------
 async function showPage(p) {
     if (p < 1 || p > IMAGE_COUNT) return;
     currentPage = p;
@@ -137,57 +141,50 @@ async function showPage(p) {
     showImageError(false);
     showSpinner(true);
 
-    // If already loaded in cache, set immediately
+    // Use cache when available
     const cached = imageCache.get(p);
     if (cached && cached.status === 'loaded' && cached.src) {
-        img.src = cached.src;
-        img.alt = `صفحة ${p}`;
+        setImageSrc(cached.src, p);
         showSpinner(false);
     } else {
-        // attempt to preload (this will update cache when done)
         try {
             const src = await preloadImage(p, { timeout: 6000 });
-            img.src = src;
-            img.alt = `صفحة ${p}`;
+            setImageSrc(src, p);
             showSpinner(false);
         } catch (err) {
-            // failed to load; show error and try direct fallback
             showSpinner(false);
-            showImageError(true, 'فشل تحميل الصفحة. <br> الرجاء التأكد من وجود الصور على المسار الصحيح أو تقليل حجم الصور.');
+            const attempts = getCandidatesFor(p).map(u => `<div style="font-size:0.83rem;color:#ffd;">${u}</div>`).join('');
+            // If running from file:// give hint
+            let hint = '';
+            if (location.protocol === 'file:') {
+                hint = '<div style="font-size:0.85rem;color:#fbb;margin-top:6px;">تشغيل من ملف محلي (file://) قد يمنع بعض المتصفحات على التلفزيون من تحميل الصور. انصح بنشر عبر HTTPS (مثلاً GitHub Pages).</div>';
+            }
+            showImageError(true, `<div>فشل تحميل الصفحة ${p}.</div>${attempts}${hint}<div><button id="retry-btn">حاول مرة أخرى</button></div>`);
+            const retryBtn = document.getElementById('retry-btn');
+            if (retryBtn) retryBtn.onclick = () => { showImageError(false); showPage(p); };
             console.error('load page error', p, err);
             return;
         }
     }
 
-    // Preload neighbors for smooth navigation
-    [p - 2, p - 1, p + 1, p + 2].forEach(n => {
-        if (n >= 1 && n <= IMAGE_COUNT) {
-            // fire-and-forget preload
-            preloadImage(n, { timeout: 7000 }).catch(()=>{});
-        }
+    // preload neighbors
+    [p - 1, p + 1, p - 2, p + 2].forEach(n => {
+        if (n >= 1 && n <= IMAGE_COUNT) preloadImage(n, { timeout: 7000 }).catch(()=>{});
     });
 
-    // Optionally: prefetch via <link rel="preload"> for the immediate next
-    const next = p + 1;
-    if (next <= IMAGE_COUNT) {
-        const cand = getCandidatesFor(next)[0];
-        // create rel=preload link if not exists
-        if (!document.querySelector(`link[data-preload='page${next}']`)) {
-            const l = document.createElement('link');
-            l.rel = 'preload';
-            l.as = 'image';
-            l.href = cand;
-            l.setAttribute('data-preload', `page${next}`);
-            document.head.appendChild(l);
-        }
-    }
-
-    // ensure viewport top
-    window.scrollTo(0, 0);
+    // ensure container scrolled to top
+    try { container.scrollTop = 0; } catch (e) { window.scrollTo(0,0); }
 }
 
-// ---------- Focus & accessibility utilities ----------
+function setImageSrc(src, pageNumber) {
+    img.src = src;
+    img.alt = `صفحة ${pageNumber}`;
+    // Ensure the image fills width and is scrollable vertically inside container
+    img.style.width = '100vw';
+    img.style.height = 'auto';
+}
 
+// ---------- Focus & accessibility ----------
 function setFocusables(list) {
     focusables = Array.from(list);
     focusables.forEach(el => {
@@ -202,11 +199,7 @@ function updateFocus() {
         el.classList.toggle("focused", i === focusIndex);
     });
     if (focusIndex >= 0 && focusIndex < focusables.length) {
-        try {
-            focusables[focusIndex].focus({ preventScroll: true });
-        } catch (e) {
-            try { focusables[focusIndex].focus(); } catch (e) {}
-        }
+        try { focusables[focusIndex].focus({ preventScroll: true }); } catch (e) { try { focusables[focusIndex].focus(); } catch{} }
         focusables[focusIndex].scrollIntoView({ block: "nearest" });
     }
 }
@@ -225,7 +218,6 @@ function enableMouseFocus(el) {
 }
 
 // ---------- Menus ----------
-
 function openMainMenu() {
     mode = MODE.MAIN;
     menuOverlay.classList.remove("hidden");
@@ -239,7 +231,6 @@ function openMainMenu() {
     `;
 
     const items = [...menuBox.querySelectorAll(".menu-item")];
-
     items[0].onclick = openSurahMenu;
     items[1].onclick = openJuzMenu;
     items[2].onclick = openPageSearch;
@@ -258,7 +249,6 @@ function closeMenu() {
 }
 
 /* ================= سور ================= */
-
 function openSurahMenu() {
     mode = MODE.SURAH;
 
@@ -281,7 +271,7 @@ function openSurahMenu() {
             .forEach(s => {
                 const d = document.createElement("div");
                 d.className = "menu-item";
-                d.textContent = s.name;
+                d.textContent = `${s.id ? s.id + '. ' : ''}${s.name}`;
                 d.onclick = () => {
                     closeMenu();
                     showPage(s.startPage);
@@ -302,7 +292,6 @@ function openSurahMenu() {
 }
 
 /* ================= أجزاء ================= */
-
 function openJuzMenu() {
     mode = MODE.JUZ;
 
@@ -346,7 +335,6 @@ function openJuzMenu() {
 }
 
 /* ================= بحث الصفحات ================= */
-
 function openPageSearch() {
     mode = MODE.PAGE_SEARCH;
 
@@ -378,15 +366,21 @@ function openPageSearch() {
 }
 
 /* ================= ريموت (لوحة مفاتيح) ================= */
+/*
+ - استخدم تمرير الحاوية (container) بدل window ليتناسب مع Smart TV.
+ - لتجنب فتح القائمة بالخطأ أثناء الإقلاع، نتجاهل Enter المبكر جداً.
+*/
+const IGNORE_ENTER_MS = 350;
 
 document.addEventListener("keydown", e => {
-
     if (mode === MODE.PAGE) {
-        if (e.key === "ArrowUp") { window.scrollBy(0, -80); e.preventDefault(); }
-        if (e.key === "ArrowDown") { window.scrollBy(0, 80); e.preventDefault(); }
-        if (e.key === "ArrowRight") { showPage(currentPage - 1); e.preventDefault(); } // RTL: يمين = السابق
-        if (e.key === "ArrowLeft") { showPage(currentPage + 1); e.preventDefault(); }  // RTL: يسار = التالي
-        if (e.key === "Enter") openMainMenu();
+        if (e.key === "ArrowUp") { container.scrollBy({ top: -120, behavior: 'smooth' }); e.preventDefault(); }
+        if (e.key === "ArrowDown") { container.scrollBy({ top: 120, behavior: 'smooth' }); e.preventDefault(); }
+        if (e.key === "ArrowRight") { showPage(Math.max(1, currentPage - 1)); e.preventDefault(); } // RTL: يمين = السابق
+        if (e.key === "ArrowLeft") { showPage(Math.min(IMAGE_COUNT, currentPage + 1)); e.preventDefault(); }  // RTL: يسار = التالي
+        if (e.key === "Enter") {
+            if (Date.now() - startTime > IGNORE_ENTER_MS) openMainMenu();
+        }
         if (e.key === "PageUp") showPage(Math.max(1, currentPage - 10));
         if (e.key === "PageDown") showPage(Math.min(IMAGE_COUNT, currentPage + 10));
         return;
@@ -406,5 +400,10 @@ document.addEventListener("keydown", e => {
 });
 
 /* ========== بداية ========== */
+
+// فحص بسيط: إذا التشغيل من file:// نعرّض تحذير عند فشل التحميل
+if (location.protocol === 'file:') {
+    console.warn('تشغيل من ملف محلي: بعض متصفحات التلفاز قد تمنع تحميل الصور. أنصح باستخدام HTTPS (GitHub Pages).');
+}
 
 showPage(currentPage).catch(()=>{});
