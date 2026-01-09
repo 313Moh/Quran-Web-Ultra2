@@ -1,10 +1,11 @@
+/* عام */
 html, body {
     margin: 0;
     padding: 0;
     background: #000;
     color: #fff;
     height: 100%;
-    overflow-y: auto;
+    overflow: auto;
     font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Naskh Arabic", "Noto Sans Arabic", sans-serif;
 }
 
@@ -13,55 +14,75 @@ body.no-scroll {
     overflow: hidden;
 }
 
-/* صفحة المصحف */
+/* حاوية الصفحة: تملأ الشاشة والتمرير داخلها */
 #quran-page-container {
     width: 100%;
-    max-width: 1200px;
-    margin: 0 auto;
-    position: relative;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    height: 100vh;          /* الحاوية تملأ ارتفاع الشاشة */
+    overflow-y: auto;       /* التمرير عموديًا داخل الحاوية */
     background: #000;
+    box-sizing: border-box;
+    padding: 0;
+    display: block;
+    -webkit-overflow-scrolling: touch;
 }
 
+/* الصورة: تملأ العرض بالكامل وتبقى قابلة للتمرير عمودياً */
 #quran-page-image {
-    width: 100%;
+    width: 100vw;           /* تملأ عرض الشاشة بالكامل */
+    max-width: 100%;
     height: auto;
     display: block;
-    max-height: calc(100vh - 20px);
     object-fit: contain;
+    -webkit-user-drag: none;
+    user-select: none;
+    transform-origin: top center;
     background: #000;
 }
 
-/* سبينر التحميل */
+/* سبينر التحميل فوق الصورة */
 #spinner {
-    position: absolute;
-    width: 64px;
-    height: 64px;
+    position: fixed;
+    width: 56px;
+    height: 56px;
     border-radius: 50%;
-    border: 6px solid rgba(255,255,255,0.12);
+    border: 6px solid rgba(255,255,255,0.10);
     border-top-color: #fff;
     animation: spin 1s linear infinite;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 10;
+    z-index: 9999; /* أعلى */
+    background: transparent;
+    pointer-events: none;
 }
 #spinner.hidden { display: none; }
 @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
 
+/* رسالة الخطأ مع زر إعادة المحاولة */
 #image-error {
-    position: absolute;
-    background: rgba(255,40,40,0.06);
-    color: #ffbebe;
-    padding: 10px 14px;
-    border-radius: 8px;
-    top: 10%;
+    position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 11;
+    bottom: 6%;
+    z-index: 10000;
+    background: rgba(40,40,40,0.92);
+    color: #ffdddd;
+    padding: 12px 16px;
+    border-radius: 8px;
+    max-width: 94%;
+    text-align: center;
+    font-size: 0.95rem;
+    line-height: 1.2;
+}
+#image-error.hidden { display: none; }
+#image-error button {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: none;
+    background: #2a6;
+    color: #002;
+    cursor: pointer;
 }
 
 /* القائمة */
@@ -69,12 +90,13 @@ body.no-scroll {
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.75);
-    z-index: 100;
+    z-index: 20000;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 12px;
 }
+#menu-overlay.hidden { display: none; }
 
 #menu-box {
     width: 100%;
@@ -131,6 +153,4 @@ body.no-scroll {
     border-radius: 5px;
 }
 
-.hidden {
-    display: none;
-}
+.hidden { display: none; }
