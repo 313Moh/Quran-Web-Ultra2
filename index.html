@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <title>المصحف</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <!-- صفحة المصحف -->
     <div id="quran-page-container" aria-live="polite">
-        <img id="quran-page-image" src="" alt="صفحة المصحف" loading="eager">
-        <div id="image-error" class="hidden" role="alert">عذراً: لم نتمكن من تحميل الصفحة. حاول مرة أخرى.</div>
+        <img id="quran-page-image" src="" alt="صفحة المصحف" loading="eager" decoding="async">
+        <div id="image-error" class="hidden" role="alert" aria-live="assertive"></div>
         <div id="spinner" class="hidden" aria-hidden="true" aria-label="جارٍ التحميل"></div>
     </div>
 
