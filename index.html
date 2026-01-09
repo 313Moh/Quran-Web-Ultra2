@@ -9,14 +9,20 @@
 <body>
 
     <!-- صفحة المصحف -->
-    <div id="quran-page-container">
-        <img id="quran-page-image" src="" alt="صفحة المصحف">
+    <div id="quran-page-container" aria-live="polite">
+        <img id="quran-page-image" src="" alt="صفحة المصحف" loading="eager">
+        <div id="image-error" class="hidden" role="alert">عذراً: لم نتمكن من تحميل الصفحة. حاول مرة أخرى.</div>
+        <div id="spinner" class="hidden" aria-hidden="true" aria-label="جارٍ التحميل"></div>
     </div>
 
     <!-- القائمة -->
-    <div id="menu-overlay" class="hidden">
-        <div id="menu-box"></div>
+    <div id="menu-overlay" class="hidden" role="dialog" aria-modal="true" aria-hidden="true">
+        <div id="menu-box" role="menu" aria-label="قائمة المصحف"></div>
     </div>
+
+    <noscript>
+        <p style="color: #f88; text-align:center; padding:10px;">يحتاج الموقع لتفعيل JavaScript ليعمل بشكل صحيح.</p>
+    </noscript>
 
     <script src="data.js"></script>
     <script src="app.js"></script>
