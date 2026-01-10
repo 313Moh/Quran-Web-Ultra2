@@ -1,4 +1,4 @@
-// app.js (محدث) — يتضمن إصلاحات لمشاكل البحث، وإهمال backspace داخل الحقول، ومنع تنفيذ مفتاح التنقل مباشرة بعد الإغلاق
+// app.js (محدث) — يسمح بالملاحة بالأسهم و Enter من داخل حقول البحث إلى النتائج/الزر
 
 const IMAGE_COUNT = 604;
 let currentPage = 1;
@@ -391,8 +391,9 @@ function openPageSearch() {
 
 /* ================= ريموت (لوحة مفاتيح) ================= */
 /*
- - تجاهل مفاتيح التنقل العامة إذا كان الحدث داخل حقل إدخال (INPUT/TEXTAREA/contentEditable)
- - تجاهل الأحداث إذا نحن ضمن فترة ignoreNavUntil (لتفادي double-action من الريموت)
+ - الآن: إذا كان التركيز داخل input نسمح بالـ ArrowUp/ArrowDown والـ Enter (بمعنى عملي)
+ - لكن نترك Backspace والحروف للتعامل الطبيعي داخل الحقل.
+ - كما نتحقق من ignoreNavUntil لتفادي double-action من الريموت.
 */
 document.addEventListener("keydown", e => {
     // suppress nav during short windows after actions
@@ -403,16 +404,16 @@ document.addEventListener("keydown", e => {
     const target = e.target;
     const targetTag = target && target.tagName ? target.tagName.toUpperCase() : '';
 
-    // If focus is inside an input/textarea/contentEditable we should not hijack Backspace/Enter/Arrows
+    // If focus is inside an input/textarea/contentEditable we should not hijack editing keys
     const focusInEditable = (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || (target && target.isContentEditable));
 
+    // Page mode handling
     if (mode === MODE.PAGE) {
         if (e.key === "ArrowUp") { container.scrollBy({ top: -120, behavior: 'smooth' }); e.preventDefault(); }
         if (e.key === "ArrowDown") { container.scrollBy({ top: 120, behavior: 'smooth' }); e.preventDefault(); }
         if (e.key === "ArrowRight") { showPage(Math.max(1, currentPage - 1)); e.preventDefault(); } // RTL: يمين = السابق
         if (e.key === "ArrowLeft") { showPage(Math.min(IMAGE_COUNT, currentPage + 1)); e.preventDefault(); }  // RTL: يسار = التالي
         if (e.key === "Enter") {
-            // ignore Enter if it fired immediately on load (handled elsewhere) 
             if (Date.now() - startTime > 350) openMainMenu();
         }
         if (e.key === "PageUp") showPage(Math.max(1, currentPage - 10));
@@ -420,19 +421,45 @@ document.addEventListener("keydown", e => {
         return;
     }
 
-    // In menus/search: ignore global handling for editing keys when focus is on an input
+    // If focus is in an editable control (input/textarea/contentEditable)
     if (focusInEditable) {
-        // let the input handle the key (including Backspace)
+        // Allow arrow keys and Enter to navigate out of the input into the dialog items
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            // move focus down (from input to first result or next item)
+            moveFocus(1);
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            moveFocus(-1);
+            return;
+        }
+        if (e.key === 'Enter') {
+            // handle Enter differently based on current menu
+            if (mode === MODE.PAGE_SEARCH) {
+                e.preventDefault();
+                // trigger go (focusables layout: [back, input, go] => go index 2)
+                ignoreNavUntil = Date.now() + 300;
+                focusables[2]?.click();
+                return;
+            }
+            if (mode === MODE.SURAH || mode === MODE.JUZ) {
+                e.preventDefault();
+                // move focus to first result (if exists)
+                moveFocus(1);
+                return;
+            }
+        }
+        // For other keys (Backspace, characters) let the input handle them
         return;
     }
 
-    // navigation inside menus
+    // navigation inside menus (when focus not in input)
     if (e.key === "ArrowDown") moveFocus(1);
     if (e.key === "ArrowUp") moveFocus(-1);
 
     if (e.key === "Enter") {
-        // execute the focused item
-        // set a short ignore to prevent follow-up nav events
         ignoreNavUntil = Date.now() + 300;
         focusables[focusIndex]?.click();
     }
