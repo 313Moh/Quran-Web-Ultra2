@@ -1,4 +1,5 @@
-// app.js (محدث) — تحكم بعرض الصفحات وتحسين للتلفزيون والتمرير العمودي
+// app.js (محدث) — يتضمن إصلاحات لمشاكل البحث، وإهمال backspace داخل الحقول، ومنع تنفيذ مفتاح التنقل مباشرة بعد الإغلاق
+
 const IMAGE_COUNT = 604;
 let currentPage = 1;
 
@@ -28,15 +29,17 @@ const startTime = Date.now();
 const saved = localStorage.getItem("lastPage");
 if (saved) currentPage = +saved;
 
-// ensure overlay initially hidden
+// initial state
 menuOverlay.classList.add('hidden');
 menuOverlay.setAttribute('aria-hidden', 'true');
 showSpinner(false);
 showImageError(false);
 
+// Temporary suppression for navigation keys right after actions (to avoid double-handling from remotes)
+let ignoreNavUntil = 0;
+
 // ---------- Helpers for loading images ----------
 function getCandidatesFor(page) {
-    // نحاول نسخة منخفضة أولاً ثم webp ثم jpeg
     return [
         `pages/low/page${page}.jpeg`,
         `pages/webp/page${page}.webp`,
@@ -69,7 +72,6 @@ function loadImageSrc(src, timeout = 8000) {
             clearTimeout(t);
             reject(new Error('error'));
         };
-        // ضع src أخيراً
         im.src = src;
     });
 }
@@ -97,7 +99,6 @@ async function preloadImage(page, options = {}) {
                 const src = await loadImageSrc(s, options.timeout || 6000);
                 imageCache.set(page, { status: 'loaded', src });
                 resolveOuter(src);
-                // بعد النجاح حاول ترقية الجودة في الخلفية (إذا كانت هناك ملفات أفضل لاحقاً)
                 for (let j = i + 1; j < candidates.length; j++) {
                     const better = candidates[j];
                     loadImageSrc(better, 8000).then(bsrc => {
@@ -138,10 +139,12 @@ async function showPage(p) {
     currentPage = p;
     localStorage.setItem("lastPage", p);
 
+    // Suppress accidental nav events that might follow
+    ignoreNavUntil = Date.now() + 350;
+
     showImageError(false);
     showSpinner(true);
 
-    // Use cache when available
     const cached = imageCache.get(p);
     if (cached && cached.status === 'loaded' && cached.src) {
         setImageSrc(cached.src, p);
@@ -154,10 +157,9 @@ async function showPage(p) {
         } catch (err) {
             showSpinner(false);
             const attempts = getCandidatesFor(p).map(u => `<div style="font-size:0.83rem;color:#ffd;">${u}</div>`).join('');
-            // If running from file:// give hint
             let hint = '';
             if (location.protocol === 'file:') {
-                hint = '<div style="font-size:0.85rem;color:#fbb;margin-top:6px;">تشغيل من ملف محلي (file://) قد يمنع بعض المتصفحات على التلفزيون من تحميل الصور. انصح بنشر عبر HTTPS (مثلاً GitHub Pages).</div>';
+                hint = '<div style="font-size:0.85rem;color:#fbb;margin-top:6px;">تشغيل من ملف محلي (file://) قد يمنع بعض متصفحات التلفاز تحميل الصور. أنصح باستخدام HTTPS (مثلاً GitHub Pages).</div>';
             }
             showImageError(true, `<div>فشل تحميل الصفحة ${p}.</div>${attempts}${hint}<div><button id="retry-btn">حاول مرة أخرى</button></div>`);
             const retryBtn = document.getElementById('retry-btn');
@@ -167,19 +169,16 @@ async function showPage(p) {
         }
     }
 
-    // preload neighbors
     [p - 1, p + 1, p - 2, p + 2].forEach(n => {
         if (n >= 1 && n <= IMAGE_COUNT) preloadImage(n, { timeout: 7000 }).catch(()=>{});
     });
 
-    // ensure container scrolled to top
     try { container.scrollTop = 0; } catch (e) { window.scrollTo(0,0); }
 }
 
 function setImageSrc(src, pageNumber) {
     img.src = src;
     img.alt = `صفحة ${pageNumber}`;
-    // Ensure the image fills width and is scrollable vertically inside container
     img.style.width = '100vw';
     img.style.height = 'auto';
 }
@@ -246,6 +245,9 @@ function closeMenu() {
     document.body.classList.remove('no-scroll');
     focusables = [];
     focusIndex = -1;
+
+    // prevent immediate nav events just after closing
+    ignoreNavUntil = Date.now() + 300;
 }
 
 /* ================= سور ================= */
@@ -280,9 +282,11 @@ function openSurahMenu() {
                 enableMouseFocus(d);
             });
 
+        // Put focus on the search input so typing continues uninterrupted
         setFocusables([back, search, ...list.children]);
-        focusIndex = 2;
+        focusIndex = 1; // index of search input
         updateFocus();
+        try { search.focus(); } catch (e) {}
     }
 
     search.oninput = () => render(search.value);
@@ -324,8 +328,9 @@ function openJuzMenu() {
             });
 
         setFocusables([back, search, ...list.children]);
-        focusIndex = 2;
+        focusIndex = 1; // keep focus on search
         updateFocus();
+        try { search.focus(); } catch (e) {}
     }
 
     search.oninput = () => render(search.value);
@@ -347,49 +352,88 @@ function openPageSearch() {
     const [back, input, go] = menuBox.children;
 
     back.onclick = openMainMenu;
-    go.onclick = () => {
-        const v = +input.value;
+
+    go.onclick = (ev) => {
+        // prevent accidental duplicate nav events: set ignore flag
+        ignoreNavUntil = Date.now() + 350;
+
+        const raw = input.value;
+        // parse integer robustly
+        const v = parseInt(String(raw).replace(/\D+/g,''), 10);
         if (Number.isInteger(v) && v >= 1 && v <= IMAGE_COUNT) {
             closeMenu();
-            showPage(v);
+            // delay tiny bit to ensure closeMenu's ignoreNavUntil takes effect before any nav keys
+            setTimeout(() => showPage(v), 10);
+        } else {
+            // invalid input: show quick hint
+            input.focus();
+            input.select();
         }
     };
 
-    input.setAttribute('type', 'number');
+    input.setAttribute('type', 'text'); // text so backspace works identically across remotes; we'll parse digits
     input.setAttribute('inputmode', 'numeric');
     input.addEventListener('keydown', e => {
-        if (e.key === 'Enter') go.click();
+        // keep Enter inside input from bubbling to global handler (prevents duplicate)
+        if (e.key === 'Enter') {
+            e.stopPropagation();
+            e.preventDefault();
+            go.click();
+        }
     });
 
     [back, input, go].forEach(enableMouseFocus);
     setFocusables([back, input, go]);
+    focusIndex = 1; // ensure input stays focused for typing
+    updateFocus();
+    try { input.focus(); } catch (e) {}
 }
 
 /* ================= ريموت (لوحة مفاتيح) ================= */
 /*
- - استخدم تمرير الحاوية (container) بدل window ليتناسب مع Smart TV.
- - لتجنب فتح القائمة بالخطأ أثناء الإقلاع، نتجاهل Enter المبكر جداً.
+ - تجاهل مفاتيح التنقل العامة إذا كان الحدث داخل حقل إدخال (INPUT/TEXTAREA/contentEditable)
+ - تجاهل الأحداث إذا نحن ضمن فترة ignoreNavUntil (لتفادي double-action من الريموت)
 */
-const IGNORE_ENTER_MS = 350;
-
 document.addEventListener("keydown", e => {
+    // suppress nav during short windows after actions
+    if (Date.now() < ignoreNavUntil) {
+        return;
+    }
+
+    const target = e.target;
+    const targetTag = target && target.tagName ? target.tagName.toUpperCase() : '';
+
+    // If focus is inside an input/textarea/contentEditable we should not hijack Backspace/Enter/Arrows
+    const focusInEditable = (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || (target && target.isContentEditable));
+
     if (mode === MODE.PAGE) {
         if (e.key === "ArrowUp") { container.scrollBy({ top: -120, behavior: 'smooth' }); e.preventDefault(); }
         if (e.key === "ArrowDown") { container.scrollBy({ top: 120, behavior: 'smooth' }); e.preventDefault(); }
         if (e.key === "ArrowRight") { showPage(Math.max(1, currentPage - 1)); e.preventDefault(); } // RTL: يمين = السابق
         if (e.key === "ArrowLeft") { showPage(Math.min(IMAGE_COUNT, currentPage + 1)); e.preventDefault(); }  // RTL: يسار = التالي
         if (e.key === "Enter") {
-            if (Date.now() - startTime > IGNORE_ENTER_MS) openMainMenu();
+            // ignore Enter if it fired immediately on load (handled elsewhere) 
+            if (Date.now() - startTime > 350) openMainMenu();
         }
         if (e.key === "PageUp") showPage(Math.max(1, currentPage - 10));
         if (e.key === "PageDown") showPage(Math.min(IMAGE_COUNT, currentPage + 10));
         return;
     }
 
+    // In menus/search: ignore global handling for editing keys when focus is on an input
+    if (focusInEditable) {
+        // let the input handle the key (including Backspace)
+        return;
+    }
+
+    // navigation inside menus
     if (e.key === "ArrowDown") moveFocus(1);
     if (e.key === "ArrowUp") moveFocus(-1);
 
     if (e.key === "Enter") {
+        // execute the focused item
+        // set a short ignore to prevent follow-up nav events
+        ignoreNavUntil = Date.now() + 300;
         focusables[focusIndex]?.click();
     }
 
@@ -401,7 +445,6 @@ document.addEventListener("keydown", e => {
 
 /* ========== بداية ========== */
 
-// فحص بسيط: إذا التشغيل من file:// نعرّض تحذير عند فشل التحميل
 if (location.protocol === 'file:') {
     console.warn('تشغيل من ملف محلي: بعض متصفحات التلفاز قد تمنع تحميل الصور. أنصح باستخدام HTTPS (GitHub Pages).');
 }
